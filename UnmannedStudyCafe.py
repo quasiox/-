@@ -34,8 +34,6 @@ DT_FMT = "%Y-%m-%d %H:%M"
 DT_FMT_SEC = "%Y-%m-%d %H:%M:%S"
 
 ADMIN_ID = "admin"
-ADMIN_PW = "qwert1234"
-ADMIN_PHONE = "010-0000-0000"
 
 TICKET_TYPE_NAMES = {0: "없음", 1: "정기권", 2: "시간권", 3: "종일권", 4: "기간권"}
 
@@ -305,6 +303,7 @@ class StudyCafe:
         self.sessions: list[Session] = []
         self.current_user: User | None = None
         self.running = True
+        self.time_offset_min = 0
 
     # ─── 파일 I/O ───
     def _ensure_db_dir(self):
@@ -405,13 +404,6 @@ class StudyCafe:
                 sys.exit(1)
             self.sessions.append(s)
 
-        if self._find_user(ADMIN_ID) is None:
-            admin_user = User(ADMIN_ID, sha256(ADMIN_PW), ADMIN_PHONE)
-            idx = self._find_user_index(ADMIN_ID)
-            self.users.insert(idx, admin_user)
-            self._save_users()
-            print(f"... 관리자 계정({ADMIN_ID})이 자동 생성되었습니다.")
-
     def _save_file(self, filepath, items):
         with open(filepath, "w", encoding="utf-8") as f:
             for item in items:
@@ -433,6 +425,55 @@ class StudyCafe:
         self._save_users()
         self._save_seats()
         self._save_sessions()
+
+    def _now(self) -> datetime:
+        return datetime.now() + timedelta(minutes=self.time_offset_min)
+
+    def accelerate_time(self, minutes: int, save=True, verbose=True) -> bool:
+        if not isinstance(minutes, int):
+            return False
+        if minutes < 0:
+            print(".!! 오류: 0 이상의 정수(분)만 입력할 수 있습니다.")
+            return False
+
+        self.time_offset_min += minutes
+        now = self._now()
+
+        changed = False
+        for seat in self.seats:
+            if seat.is_empty():
+                continue
+
+            user = self._find_user(seat.user_id)
+            if user is None:
+                continue
+
+            if self._check_expiry(user, now):
+                changed = True
+
+        if changed and save:
+            self._save_users()
+            self._save_seats()
+
+        if verbose:
+            print(f"... 테스트 시간 {minutes}분 가속됨 (누적 {self.time_offset_min}분)")
+            print(f"    현재 기준 시각: {now.strftime(DT_FMT_SEC)}")
+
+        return True
+
+    def cmd_timewarp(self, args: list[str]):
+        if len(args) != 1:
+            print(".!! 오류: 1개의 정수 인자가 필요합니다.")
+            print("... 사용법: timewarp 120")
+            return
+
+        try:
+            minutes = int(args[0])
+        except ValueError:
+            print(".!! 오류: 정수를 입력하세요.")
+            return
+
+        self.accelerate_time(minutes, save=True, verbose=True)
 
     # ─── 사용자 검색 (이진 탐색) ───
     def _find_user(self, uid: str) -> User | None:
@@ -474,7 +515,7 @@ class StudyCafe:
     def _calc_effective_remain(self, user: User, now: datetime = None) -> int:
         """현재 시점 기준 실질 잔여 시간(분) 반환"""
         if now is None:
-            now = datetime.now()
+            now = self._now()
         ticket = self._find_ticket(user.ticket_id)
         if ticket is None:
             return 0
@@ -516,8 +557,9 @@ class StudyCafe:
 
     def _check_expiry(self, user: User, now: datetime = None):
         """이용권 만료 확인 및 처리. 만료 시 True 반환"""
+
         if now is None:
-            now = datetime.now()
+            now = self._now()
         if not user.has_ticket():
             return False
 
@@ -562,7 +604,7 @@ class StudyCafe:
     def _do_exit(self, user: User, now: datetime = None) -> tuple[int, int]:
         """퇴장 처리. (이용시간분, 잔여분) 반환"""
         if now is None:
-            now = datetime.now()
+            now = self._now()
 
         ticket = self._find_ticket(user.ticket_id)
         seat = self._find_seat_by_user(user.id)
@@ -640,7 +682,7 @@ class StudyCafe:
         else:
             self._show_cmds_logged_out()
 
-    CMDS_ALWAYS = {"help", "end"}
+    CMDS_ALWAYS = {"help", "end", "timewarp"}
     CMDS_LOGGED_OUT = {"login", "register"}
     CMDS_LOGGED_IN = {"seat", "enter", "exit", "buy", "myinfo", "admin",
                        "logout", "pause", "resume"}
@@ -666,8 +708,23 @@ class StudyCafe:
             return self.CMD_ALIASES[word]
         return word
 
-    # ─── 좌석 출력 ───
+    # ─── 좌석 출력(동시에 이용권 만료 체크) ───
     def _print_seats(self):
+        now = self._now()
+        for seat in self.seats:
+            if seat.is_empty():
+                continue
+
+            user = self._find_user(seat.user_id)
+            if user is None:
+                continue
+            print(user.id)
+            if self._check_expiry(user, now):
+                changed = True
+
+        self._save_users()
+        self._save_seats()
+
         print("=== 좌석 현황 ===")
         for r in range(ROWS):
             row_str = ""
@@ -718,6 +775,7 @@ class StudyCafe:
             "logout": "로그아웃합니다.\n동의어: logout 로그아웃\n인자: 없음",
             "pause": "자리비움 상태로 전환합니다.\n동의어: pause 자리비움\n인자: 없음",
             "resume": "자리비움 상태를 해제합니다.\n동의어: resume 자리비움해제\n인자: 없음",
+            "timewarp": "테스트용으로 시간을 지정한 분만큼 앞으로 진행시킵니다.\n동의어: timewarp\n인자: 정수 1개 (분)",
         }
         print(f"... {help_texts.get(cmd, '도움말 없음')}")
 
@@ -726,7 +784,7 @@ class StudyCafe:
             print(".!! 오류: 인자가 없어야 합니다.")
             return
 
-        now = datetime.now()
+        now = self._now()
         if self.current_user:
             user = self.current_user
             ticket = self._find_ticket(user.ticket_id)
@@ -767,7 +825,7 @@ class StudyCafe:
             return
 
         self.current_user = user
-        now = datetime.now()
+        now = self._now()
 
         # 만료 확인
         expired = self._check_expiry(user, now)
@@ -826,7 +884,7 @@ class StudyCafe:
                 return
             phone = normalize_phone(phone_input.strip())
             if phone is None:
-                print(".!! 오류: 올바른 전화번호 형식이 아닙니다. (010-XXXX-XXXX 또는 01X-XXX-XXXX)")
+                print(".!! 오류: 올바른 전화번호 형식이 아닙니다. (010-XXXX-XXXX)")
                 continue
             # 중복 확인
             dup = False
@@ -900,7 +958,7 @@ class StudyCafe:
                 continue
             break
 
-        now = datetime.now()
+        now = self._now()
         seat.user_id = user.id
         user.start_time = now
         user.away_start = None
@@ -923,7 +981,7 @@ class StudyCafe:
             print(".!! 오류: 현재 입장 중이 아닙니다.")
             return
 
-        now = datetime.now()
+        now = self._now()
         seat = self._find_seat_by_user(user.id)
         seat_num = seat.id if seat else "?"
         ticket = self._find_ticket(user.ticket_id)
@@ -1050,7 +1108,7 @@ class StudyCafe:
             return
 
         user = self.current_user
-        now = datetime.now()
+        now = self._now()
         seat = self._find_seat_by_user(user.id)
         ticket = self._find_ticket(user.ticket_id)
 
@@ -1150,7 +1208,7 @@ class StudyCafe:
             print(f".!! 오류: '{uid}'은(는) 현재 입장 중이 아닙니다.")
             return
 
-        now = datetime.now()
+        now = self._now()
         seat = self._find_seat_by_user(uid)
         seat_num = seat.id if seat else "?"
         self._do_exit(user, now)
@@ -1174,7 +1232,7 @@ class StudyCafe:
             return
 
         user = self.current_user
-        now = datetime.now()
+        now = self._now()
         ticket = self._find_ticket(user.ticket_id)
 
         # 시간권 차감 (입장 중일 때)
@@ -1215,7 +1273,7 @@ class StudyCafe:
             print(".!! 오류: 이미 자리비움 상태입니다. 'resume' 명령어로 자리비움을 해제하세요.")
             return
 
-        user.away_start = datetime.now()
+        user.away_start = self._now()
         self._save_users()
         print("... 자리비움을 시작합니다. 이용 시간이 절반 속도로 차감됩니다.")
 
@@ -1232,7 +1290,7 @@ class StudyCafe:
             print(".!! 오류: 현재 자리비움 상태가 아닙니다.")
             return
 
-        now = datetime.now()
+        now = self._now()
         ticket = self._find_ticket(user.ticket_id)
         away_sec = (now - user.away_start).total_seconds()
         away_min = math.ceil(away_sec / 60)
@@ -1271,7 +1329,7 @@ class StudyCafe:
     # ─── EOF 처리 ───
     def _handle_eof(self):
         print("\n... EOF 감지. 프로그램을 종료합니다.")
-        now = datetime.now()
+        now = self._now()
         if self.current_user:
             user = self.current_user
             ticket = self._find_ticket(user.ticket_id)
@@ -1312,6 +1370,7 @@ class StudyCafe:
             "logout": self.cmd_logout,
             "pause": self.cmd_pause,
             "resume": self.cmd_resume,
+            "timewarp": self.cmd_timewarp,
         }
 
         while self.running:
@@ -1320,34 +1379,27 @@ class StudyCafe:
                 self._handle_eof()
                 break
 
-            tokens = line.split()
-            if not tokens:
+            if line.strip() == "":
                 self._show_available_cmds()
                 continue
 
-            raw_cmd = tokens[0]
-            cmd = self._resolve_cmd(raw_cmd)
+            tokens = line.strip().split()
+            cmd_word = self._resolve_cmd(tokens[0])
             args = tokens[1:]
 
-            avail = self._available_cmds()
-
-            # 유효한 명령어인지 확인
-            all_cmds = self.CMDS_ALWAYS | self.CMDS_LOGGED_OUT | self.CMDS_LOGGED_IN
-            if cmd not in all_cmds:
+            if cmd_word not in self._available_cmds():
+                print(".!! 오류: 현재 상태에서 사용할 수 없는 명령어입니다.")
                 self._show_available_cmds()
                 continue
 
-            # 상태 오류 확인
-            if cmd in self.CMDS_LOGGED_OUT and self.current_user:
-                print(".!! 오류: 이미 로그인된 상태입니다. 먼저 로그아웃 후 다시 시도하세요.")
-                continue
-            if cmd in self.CMDS_LOGGED_IN and not self.current_user:
-                print(".!! 오류: 로그인 상태에서만 사용 가능한 명령어입니다.")
+            handler = cmd_map.get(cmd_word)
+            if handler is None:
+                print(".!! 오류: 구현되지 않은 명령어입니다.")
                 continue
 
-            handler = cmd_map.get(cmd)
-            if handler:
-                handler(args)
+            handler(args)
+
+        self.save_all()
 
 
 # ═══════════════════════════════════════════
