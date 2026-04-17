@@ -34,6 +34,8 @@ DT_FMT = "%Y-%m-%d %H:%M"
 DT_FMT_SEC = "%Y-%m-%d %H:%M:%S"
 
 ADMIN_ID = "admin"
+ADMIN_PW = "qwert1234"
+ADMIN_PHONE = "010-0000-0000"
 
 TICKET_TYPE_NAMES = {0: "없음", 1: "정기권", 2: "시간권", 3: "종일권", 4: "기간권"}
 
@@ -402,6 +404,13 @@ class StudyCafe:
                 print(f"!!! 오류: SessionRelation.txt {i}행 형식 오류: {line}")
                 sys.exit(1)
             self.sessions.append(s)
+
+        if self._find_user(ADMIN_ID) is None:
+            admin_user = User(ADMIN_ID, sha256(ADMIN_PW), ADMIN_PHONE)
+            idx = self._find_user_index(ADMIN_ID)
+            self.users.insert(idx, admin_user)
+            self._save_users()
+            print(f"... 관리자 계정({ADMIN_ID})이 자동 생성되었습니다.")
 
     def _save_file(self, filepath, items):
         with open(filepath, "w", encoding="utf-8") as f:
@@ -817,7 +826,7 @@ class StudyCafe:
                 return
             phone = normalize_phone(phone_input.strip())
             if phone is None:
-                print(".!! 오류: 올바른 전화번호 형식이 아닙니다. (010-XXXX-XXXX)")
+                print(".!! 오류: 올바른 전화번호 형식이 아닙니다. (010-XXXX-XXXX 또는 01X-XXX-XXXX)")
                 continue
             # 중복 확인
             dup = False
