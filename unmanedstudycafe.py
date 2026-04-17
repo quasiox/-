@@ -32,7 +32,7 @@ SEAT_FILE = os.path.join(DB_DIR, "SeatRelation.txt")
 SESSION_FILE = os.path.join(DB_DIR, "SessionRelation.txt")
 
 DT_FMT = "%Y-%m-%d %H:%M"
-DT_FMT_SEC = "%Y-%m-%d %H:%M:%S"
+DT_FMT_SEC = "%Y-%m-%d %H:%M:%S" 
 
 ADMIN_ID = "admin"
 
@@ -1181,20 +1181,24 @@ class StudyCafe:
                 user.ticket_id = 0
                 user.remain = 0
                 user.start_time = None
+        #시간권은 로그아웃 시 좌석 반납
+            seat = self._find_seat_by_user(user.id)
+            if seat:
+                seat.user_id = ""
 
-        # 정기권 차감 (입장 중일 때)
-        if ticket and ticket.type == 1 and user.start_time:
+        elif ticket and ticket.type == 1 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
-            user.start_time = None
+            user.start_time = now  # ← None 아닌 now로 갱신 (좌석 유지)
             user.away_start = None
             if user.remain <= 0:
                 user.ticket_id = 0
                 user.remain = 0
-
-        seat = self._find_seat_by_user(user.id)
-        if seat:
-            seat.user_id = ""
+                user.start_time = None
+                # 만료 시에만 좌석 반납
+                seat = self._find_seat_by_user(user.id)
+                if seat:
+                    seat.user_id = ""
 
         for s in reversed(self.sessions):
             if s.user_id == user.id and s.exit_time is None:
