@@ -597,7 +597,7 @@ class StudyCafe:
                 s.exit_time = now
                 s.usage_min = usage_min
                 break
-        self.save_all()
+        self._save_sessions()
 
         return deduction, user.remain
 
@@ -1194,8 +1194,9 @@ class StudyCafe:
         for s in self.sessions:
             et = s.enter_time.strftime(DT_FMT_SEC)
             xt = s.exit_time.strftime(DT_FMT_SEC) if s.exit_time else "(이용 중)"
+            ut = s.exit_time.strftime(DT_FMT_SEC) if s.exit_time else self.get_now()-s.enter_time
             print(f"    {s.user_id} | 이용권:{s.ticket_id} | 좌석:{s.seat_id} | "
-                  f"입장:{et} | 퇴장:{xt} | {(self.get_now()-s.enter_time).seconds//60}분")
+                  f"입장:{et} | 퇴장:{xt} | {ut}분")
 
     def cmd_logout(self, args: list[str]):
         if args:
@@ -1237,7 +1238,7 @@ class StudyCafe:
 
         for s in reversed(self.sessions):
             if s.user_id == user.id and s.exit_time is None:
-                s.exit_time = ""
+                s.exit_time = None
                 enter = s.enter_time
                 s.usage_min = math.floor((now - enter).total_seconds() / 60)
                 break
