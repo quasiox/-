@@ -3,6 +3,7 @@
 무인 스터디카페 UnmannedStudyCafe
 C03팀 기획서 기반 구현
 """
+from __future__ import annotations
 
 import hashlib
 import os
@@ -63,13 +64,14 @@ def safe_input(prompt=""):
     except EOFError:
         return None
 
-
 def safe_getpass(prompt=""):
     try:
         return getpass(prompt)
     except EOFError:
         return None
 
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear') 
 
 def fmt_minutes(minutes: int) -> str:
     """분을 'H시간 M분' 형태로"""
@@ -77,10 +79,8 @@ def fmt_minutes(minutes: int) -> str:
     m = minutes % 60
     return f"{h}시간 {m:02d}분"
 
-
 def fmt_price(price: int) -> str:
     return f"{price:,}원"
-
 
 def normalize_phone(raw: str) -> str | None:
     """전화번호를 정규화. 실패 시 None"""
@@ -115,14 +115,15 @@ def normalize_phone(raw: str) -> str | None:
         return None
     if len(last) != 4 or not last.isdigit():
         return None
+    if first == "010" and len(mid) == 3:
+        return None
 
     return f"{first}-{mid}-{last}"
-
 
 def validate_id(uid: str) -> str | None:
     """아이디 유효성 검사. 오류 메시지 반환, 정상이면 None"""
     if uid == ADMIN_ID:
-        return None  # admin은 특수 허용
+        return None  # admin은 특수 허용    ?? 회원가입도? 
     if len(uid) < 6 or len(uid) > 20:
         return "아이디는 6자 이상 20자 이하여야 합니다."
     if not uid[0].isalpha() or not uid[0].islower():
@@ -131,7 +132,6 @@ def validate_id(uid: str) -> str | None:
         if not (ch.islower() or ch.isdigit()):
             return "아이디에는 영문 소문자와 숫자만 사용할 수 있습니다."
     return None
-
 
 def validate_password(pw: str, uid: str) -> str | None:
     """비밀번호 유효성 검사"""
@@ -154,7 +154,6 @@ def validate_password(pw: str, uid: str) -> str | None:
     if pw == uid:
         return "아이디와 동일한 비밀번호는 사용할 수 없습니다."
     return None
-
 
 # ═══════════════════════════════════════════
 #  모델 클래스
@@ -752,7 +751,7 @@ class StudyCafe:
             self._handle_eof()
             return
 
-        user = self._find_user(uid_input.strip())
+        user = self._find_user(uid_input.strip())                   #strip 사용 할건지?
         if user is None or user.pw_hash != sha256(pw_input):
             print(".!! 오류: 아이디 또는 비밀번호가 올바르지 않습니다.")
             return
@@ -778,7 +777,7 @@ class StudyCafe:
             if uid_input is None:
                 self._handle_eof()
                 return
-            uid = uid_input.strip()
+            uid = uid_input.strip()             #strip?
             err = validate_id(uid)
             if err:
                 print(f".!! 오류: {err}")
@@ -838,7 +837,7 @@ class StudyCafe:
         if confirm is None:
             self._handle_eof()
             return
-        if confirm.strip() != "Yes":
+        if confirm.strip() != "Yes":        #strip?
             print("... 회원가입을 취소하였습니다.")
             return
 
@@ -1304,9 +1303,19 @@ class StudyCafe:
             "pause": self.cmd_pause,
             "resume": self.cmd_resume,
         }
+        last_activity_time = datetime.now()
 
         while self.running:
+            self._print_seats() 
+            print("====================================")
             line = safe_input(self._prompt())
+            current_time = datetime.now()
+            if self.current_user and inactive_seconds >= 180: 
+                print(f"\n[안내] 3분 이상 미활동으로 자동 로그아웃되었습니다.") 
+                self.cmd_logout([]) 
+                last_activity_time = datetime.now()
+                continue
+
             if line is None:
                 self._handle_eof()
                 break
@@ -1326,7 +1335,9 @@ class StudyCafe:
             all_cmds = self.CMDS_ALWAYS | self.CMDS_LOGGED_OUT | self.CMDS_LOGGED_IN
             if cmd not in all_cmds:
                 self._show_available_cmds()
+                last_activity_time = datetime.now()
                 continue
+            last_activity_time = datetime.now()
 
             # 상태 오류 확인
             if cmd in self.CMDS_LOGGED_OUT and self.current_user:
@@ -1339,6 +1350,7 @@ class StudyCafe:
             handler = cmd_map.get(cmd)
             if handler:
                 handler(args)
+            last_activity_time = datetime.now()
 
 
 # ═══════════════════════════════════════════
