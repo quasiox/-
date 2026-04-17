@@ -841,7 +841,7 @@ class StudyCafe:
         if confirm is None:
             self._handle_eof()
             return
-        if confirm.strip() != "Yes":
+        if confirm.strip().lower() not in "yes":
             print("... 회원가입을 취소하였습니다.")
             return
 
@@ -1341,7 +1341,7 @@ class StudyCafe:
                 self._show_available_cmds()
                 continue
 
-            raw_cmd = tokens[0]
+            raw_cmd = tokens[0].lower()
             cmd = self._resolve_cmd(raw_cmd)
             args = tokens[1:]
 
