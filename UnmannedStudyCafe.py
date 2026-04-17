@@ -501,10 +501,13 @@ class StudyCafe:
 
         return user.remain
 
-    def _calc_deduction(self, user: User, ticket: Ticket, now: self.get_now()) -> int:
+    def _calc_deduction(self, user: User, ticket: Ticket, now: datetime = None) -> int:
         """start_time 기준 차감할 분 수 계산"""
         if user.start_time is None:
             return 0
+
+        if now is None:
+            now = self.get_now()
 
         if ticket.type == 2 and user.away_start:
             # 시간권 + 자리비움: 절반 차감
@@ -594,6 +597,7 @@ class StudyCafe:
                 s.exit_time = now
                 s.usage_min = usage_min
                 break
+        self.save_all()
 
         return deduction, user.remain
 
@@ -985,6 +989,7 @@ class StudyCafe:
             else:
                 print(".!! 오류: 이미 유효한 이용권을 보유 중입니다.")
             print("    현재 이용권을 모두 소진한 후 구매하세요.")
+            return
 
         # 종류 선택
         print("=== 이용권 구매 ===")
@@ -1232,7 +1237,7 @@ class StudyCafe:
 
         for s in reversed(self.sessions):
             if s.user_id == user.id and s.exit_time is None:
-                s.exit_time = now
+                s.exit_time = ""
                 enter = s.enter_time
                 s.usage_min = math.floor((now - enter).total_seconds() / 60)
                 break
@@ -1246,8 +1251,13 @@ class StudyCafe:
         if args:
             print(".!! 오류: 인자가 없어야 합니다.")
             return
-
         user = self.current_user
+        ticket = self._find_ticket(user.ticket_id)
+        if not ticket.type == 2:
+            print("시간권만 자리비움이 가능합니다.")
+            return
+
+        
         if not user.is_entered():
             print(".!! 오류: 현재 입장 중이 아닙니다. 자리비움은 입장 중에만 사용할 수 있습니다.")
             return
@@ -1391,7 +1401,7 @@ class StudyCafe:
 
         while self.running:
             self._print_seats() 
-            print(f"현재시각 : {self.get_now()}입니다")
+            print(f"현재시각 : {self.get_now().strftime(DT_FMT_SEC)}입니다")
             print("====================================")
             line = safe_input(self._prompt())
             current_time = self.get_now()
