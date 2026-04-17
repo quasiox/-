@@ -1180,7 +1180,7 @@ class StudyCafe:
             et = s.enter_time.strftime(DT_FMT_SEC)
             xt = s.exit_time.strftime(DT_FMT_SEC) if s.exit_time else "(이용 중)"
             print(f"    {s.user_id} | 이용권:{s.ticket_id} | 좌석:{s.seat_id} | "
-                  f"입장:{et} | 퇴장:{xt} | {s.usage_min}분")
+                  f"입장:{et} | 퇴장:{xt} | {(self.get_now()-s.enter_time).seconds//60}분")
 
     def cmd_logout(self, args: list[str]):
         if args:
@@ -1201,16 +1201,32 @@ class StudyCafe:
                 user.ticket_id = 0
                 user.remain = 0
                 user.start_time = None
+        #시간권은 로그아웃 시 좌석 반납
+            seat = self._find_seat_by_user(user.id)
+            if seat:
+                seat.user_id = ""
 
-        # 정기권 차감 (입장 중일 때)
-        if ticket and ticket.type == 1 and user.start_time:
+        elif ticket and ticket.type == 1 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
-            user.start_time = None
+            user.start_time = now  # ← None 아닌 now로 갱신 (좌석 유지)
             user.away_start = None
             if user.remain <= 0:
                 user.ticket_id = 0
                 user.remain = 0
+                user.start_time = None
+                # 만료 시에만 좌석 반납
+                seat = self._find_seat_by_user(user.id)
+                if seat:
+                    seat.user_id = ""
+
+        for s in reversed(self.sessions):
+            if s.user_id == user.id and s.exit_time is None:
+                s.exit_time = now
+                enter = s.enter_time
+                s.usage_min = math.floor((now - enter).total_seconds() / 60)
+                break
+
 
         self.save_all()
         print("... 로그아웃 되었습니다.")
@@ -1385,7 +1401,7 @@ class StudyCafe:
                 self._show_available_cmds()
                 continue
 
-            raw_cmd = tokens[0]
+            raw_cmd = tokens[0].lower()
             cmd = self._resolve_cmd(raw_cmd)
             args = tokens[1:]
 
