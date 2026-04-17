@@ -944,9 +944,12 @@ class StudyCafe:
 
         deduction, remain = self._do_exit(user, now)
 
-        if ticket and ticket.type in (1, 2):
+        if ticket and ticket.type == 1:
             print(f"... {seat_num}번 좌석에서 퇴장하였습니다.")
             print(f"    이용 시간: {fmt_minutes(deduction)} / 잔여 시간: {fmt_minutes(remain)} ({ticket.type_name()})")
+        elif ticket and ticket.type == 2:
+            print("시간권은 중도 퇴장이 불가합니다.")
+            return
         else:
             print(f"... {seat_num}번 좌석에서 퇴장하였습니다.")
 
