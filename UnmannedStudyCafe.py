@@ -670,6 +670,18 @@ class StudyCafe:
 
     # ─── 좌석 출력 ───
     def _print_seats(self):
+        now = self.get_now()
+        for seat in self.seats:
+            if seat.is_empty():
+                continue
+            
+            user = self._find_user(seat.user_id)
+            if user is None:
+                continue
+            if self._check_expiry(user, now):
+                changed = True
+            self._save_users()
+            self._save_seats()
         print("=== 좌석 현황 ===")
         for r in range(ROWS):
             row_str = ""
@@ -763,7 +775,7 @@ class StudyCafe:
             self._handle_eof()
             return
 
-        user = self._find_user(uid_input.strip())                   #strip 사용 할건지?
+        user = self._find_user(uid_input)                   
         if user is None or user.pw_hash != sha256(pw_input):
             print(".!! 오류: 아이디 또는 비밀번호가 올바르지 않습니다.")
             return
@@ -789,7 +801,7 @@ class StudyCafe:
             if uid_input is None:
                 self._handle_eof()
                 return
-            uid = uid_input.strip()             #strip?
+            uid = uid_input         
             err = validate_id(uid)
             if err:
                 print(f".!! 오류: {err}")
@@ -826,7 +838,7 @@ class StudyCafe:
             if phone_input is None:
                 self._handle_eof()
                 return
-            phone = normalize_phone(phone_input.strip())
+            phone = normalize_phone(phone_input)
             if phone is None:
                 print(".!! 오류: 올바른 전화번호 형식이 아닙니다. (010-XXXX-XXXX 또는 01X-XXX-XXXX)")
                 continue
@@ -849,7 +861,7 @@ class StudyCafe:
         if confirm is None:
             self._handle_eof()
             return
-        if confirm.strip() != "Yes":        #strip?
+        if confirm != "Yes":        
             print("... 회원가입을 취소하였습니다.")
             return
 
@@ -888,7 +900,7 @@ class StudyCafe:
             if seat_input is None:
                 self._handle_eof()
                 return
-            seat_input = seat_input.strip()
+            seat_input = seat_input
             if not seat_input.isdigit() or seat_input.startswith("0"):
                 print(".!! 오류: 유효하지 않은 좌석 번호입니다. (1 이상의 정수)")
                 continue
@@ -971,7 +983,7 @@ class StudyCafe:
         if type_input is None:
             self._handle_eof()
             return
-        type_input = type_input.strip()
+        type_input = type_input
         if type_input == "0":
             print("... 구매를 취소하였습니다.")
             return
@@ -1020,7 +1032,7 @@ class StudyCafe:
         if confirm is None:
             self._handle_eof()
             return
-        if confirm.strip().lower() != "y":
+        if confirm.lower() != "y":
             print("... 구매를 취소하였습니다.")
             return
 
@@ -1106,7 +1118,7 @@ class StudyCafe:
             if sel is None:
                 self._handle_eof()
                 return
-            sel = sel.strip()
+            sel = sel
 
             if sel == "1":
                 self._admin_user_list()
@@ -1143,7 +1155,7 @@ class StudyCafe:
         if uid_input is None:
             self._handle_eof()
             return
-        uid = uid_input.strip()
+        uid = uid_input
         user = self._find_user(uid)
         if user is None:
             print(f".!! 오류: '{uid}' 사용자를 찾을 수 없습니다.")
