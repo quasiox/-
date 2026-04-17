@@ -960,6 +960,7 @@ class StudyCafe:
         self.save_all()
 
     def cmd_buy(self, args: list[str]):
+        now = self.get_now()
         if args:
             print(".!! 오류: 인자가 없어야 합니다.")
             return
@@ -968,13 +969,22 @@ class StudyCafe:
         if user.has_ticket():
             ticket = self._find_ticket(user.ticket_id)
             if ticket:
-                eff = self._calc_effective_remain(user)
-                print(f".!! 오류: 이미 유효한 이용권({ticket.type_name()} {ticket.duration_str()}, "
-                      f"잔여 {fmt_minutes(eff)})을 보유 중입니다.")
+
+                if ticket.type in (1, 2):
+                    eff = self._calc_effective_remain(user, now)
+                    print(f"    이용권   : {ticket.type_name()} (잔여 {fmt_minutes(eff)})")
+                elif ticket.type == 3:
+                    print(f"    이용권   : 종일권 (당일 자정까지 이용 가능)")
+                elif ticket.type == 4:
+                    if user.start_time:
+                        expire = user.start_time.date() + timedelta(days=ticket.duration)
+                        remain_days = (expire - now.date()).days
+                        print(f"    이용권   : 기간권 (잔여 {remain_days}일)")
+                    else:
+                        print(f"    이용권   : 기간권 (잔여 {user.remain}일)")
             else:
                 print(".!! 오류: 이미 유효한 이용권을 보유 중입니다.")
             print("    현재 이용권을 모두 소진한 후 구매하세요.")
-            return
 
         # 종류 선택
         print("=== 이용권 구매 ===")
