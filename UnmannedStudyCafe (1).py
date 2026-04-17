@@ -986,6 +986,8 @@ class StudyCafe:
                 print(".!! 오류: 이미 유효한 이용권을 보유 중입니다.")
             print("    현재 이용권을 모두 소진한 후 구매하세요.")
 
+            return
+
         # 종류 선택
         print("=== 이용권 구매 ===")
         print("[1] 정기권  [2] 시간권  [3] 종일권  [4] 기간권  [0] 취소")
@@ -1247,7 +1249,14 @@ class StudyCafe:
             print(".!! 오류: 인자가 없어야 합니다.")
             return
 
+        
+
         user = self.current_user
+        ticket = self._find_ticket(user.ticket_id)
+
+        if not ticket.type == 2:
+            print("시간권만 자리비움이 가능합니다.")
+            return
         if not user.is_entered():
             print(".!! 오류: 현재 입장 중이 아닙니다. 자리비움은 입장 중에만 사용할 수 있습니다.")
             return
