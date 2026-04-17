@@ -870,6 +870,11 @@ class StudyCafe:
         if user.is_entered():
             print(".!! 오류: 이미 입장 중입니다. 먼저 퇴장 후 다시 시도하세요.")
             return
+        
+        existing_seat = self._find_seat_by_user(user.id)
+        if existing_seat:
+            print(f".!! 오류: 이미 {existing_seat.id}번 좌석을 이용 중입니다. 먼저 퇴장 후 다시 시도하세요")
+            return
 
         # 좌석 선택
         print("=== 좌석 선택 ===")
