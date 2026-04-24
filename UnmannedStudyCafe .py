@@ -861,11 +861,11 @@ class StudyCafe:
         print("... 입력한 정보를 확인해 주세요:")
         print(f"    아이디   : {uid}")
         print(f"    전화번호 : {phone}")
-        confirm = safe_input("선택: 이대로 가입하시겠습니까? (Yes/...) > ")
+        confirm = safe_input("선택: 이대로 가입하시겠습니까? (Yes/yes/y...) > ")
         if confirm is None:
             self._handle_eof()
             return
-        if confirm != "Yes" and confirm !="yes":        
+        if confirm != "Yes" and confirm !="yes" and confirm !="y":        
             print("... 회원가입을 취소하였습니다.")
             return
 
