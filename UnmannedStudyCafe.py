@@ -519,7 +519,7 @@ class StudyCafe:
             elapsed_sec = (now - user.start_time).total_seconds()
             return math.ceil(elapsed_sec / 60)
 
-    def _check_expiry(self, user: User, now: self.get_now() = None):
+    def _check_expiry(self, user: User, now: datetime = None):
         """이용권 만료 확인 및 처리. 만료 시 True 반환"""
         if now is None:
             now = self.get_now()
@@ -861,11 +861,11 @@ class StudyCafe:
         print("... 입력한 정보를 확인해 주세요:")
         print(f"    아이디   : {uid}")
         print(f"    전화번호 : {phone}")
-        confirm = safe_input("선택: 이대로 가입하시겠습니까? (Yes/...) > ")
+        confirm = safe_input("선택: 이대로 가입하시겠습니까? (Yes/yes/y...) > ")
         if confirm is None:
             self._handle_eof()
             return
-        if confirm != "Yes":        
+        if confirm != "Yes" and confirm !="yes" and confirm !="y":      
             print("... 회원가입을 취소하였습니다.")
             return
 
@@ -976,19 +976,19 @@ class StudyCafe:
         if user.has_ticket():
             ticket = self._find_ticket(user.ticket_id)
             if ticket:
-
+                print(".!! 오류: 이미 유효한 이용권(",end="")
                 if ticket.type in (1, 2):
                     eff = self._calc_effective_remain(user, now)
-                    print(f"    이용권   : {ticket.type_name()} (잔여 {fmt_minutes(eff)})")
+                    print(f"{ticket.type_name()} (잔여 {fmt_minutes(eff)})을 보유 중입니다.")
                 elif ticket.type == 3:
-                    print(f"    이용권   : 종일권 (당일 자정까지 이용 가능)")
+                    print(f"종일권 (당일 자정까지 이용 가능)을 보유 중입니다.")
                 elif ticket.type == 4:
                     if user.start_time:
                         expire = user.start_time.date() + timedelta(days=ticket.duration)
                         remain_days = (expire - now.date()).days
-                        print(f"    이용권   : 기간권 (잔여 {remain_days}일)")
+                        print(f"기간권 (잔여 {remain_days}일)을 보유 중입니다.")
                     else:
-                        print(f"    이용권   : 기간권 (잔여 {user.remain}일)")
+                        print(f"기간권 (잔여 {user.remain}일)을 보유 중입니다.")
             else:
                 print(".!! 오류: 이미 유효한 이용권을 보유 중입니다.")
             print("    현재 이용권을 모두 소진한 후 구매하세요.")
@@ -1197,7 +1197,7 @@ class StudyCafe:
         for s in self.sessions:
             et = s.enter_time.strftime(DT_FMT_SEC)
             xt = s.exit_time.strftime(DT_FMT_SEC) if s.exit_time else "(이용 중)"
-            ut = s.exit_time.strftime(DT_FMT_SEC) if s.exit_time else self.get_now()-s.enter_time
+            ut = s.usage_min if s.exit_time else (self.get_now()-s.enter_time).seconds//60
             print(f"    {s.user_id} | 이용권:{s.ticket_id} | 좌석:{s.seat_id} | "
                   f"입장:{et} | 퇴장:{xt} | {ut}분")
 
@@ -1214,7 +1214,7 @@ class StudyCafe:
         if ticket and ticket.type == 2 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
-            user.start_time = now  # 기준 시점 갱신
+            #user.start_time = now  # 기준 시점 갱신
             user.away_start = None
             if user.remain <= 0:
                 user.ticket_id = 0
@@ -1306,7 +1306,6 @@ class StudyCafe:
             # 아... remain에서 half_deduct만 뺐는데, 사실 active 구간은 이미 남아있는 remain에 반영 안 됨
             # 정리: remain은 구매 시점의 초기값에서 시작. start_time 이후 경과분만큼 차감해야 함.
             # resume 시: remain -= (active + half_away), start_time = now
-            user.remain = max(0, user.remain - active_deduct)  # active 구간 추가 차감
             # 이미 half_deduct를 뺐으므로 총 = active_deduct + half_deduct
             user.start_time = now
             user.away_start = None
@@ -1363,11 +1362,12 @@ class StudyCafe:
             # 3. [핵심] 오프셋이 0보다 작거나 같은지 확인 (과거 또는 현재 시각 차단)
             if new_offset.total_seconds() <= 0:
                 print(".!! 오류: 현재 시각보다 이후의 시각만 설정할 수 있습니다.")
-                return self.get_now()
+                return
 
             # 4. 검증 통과 시 오프셋 업데이트
             self.time_offset = new_offset
             print(f"... 시각이 변경되었습니다: {self.get_now().strftime('%Y-%m-%d %H:%M')}")
+            return
         
         except ValueError:
             print(".!! 오류: 날짜 형식이 올바르지 않습니다. (예: 2000-01-01 00:00)")
