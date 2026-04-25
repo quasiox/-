@@ -1693,21 +1693,18 @@ class StudyCafe:
         user.away_time += away_min
 
         if ticket and ticket.type == 2:
-            # 시간권: 절반만 차감
-            half_deduct = math.ceil(away_min / 2)
-            user.remain = max(0, user.remain - half_deduct)
-            # start_time을 조정: 자리비움 기간의 절반만 경과한 것처럼
-            # 실제로는 remain을 직접 차감했으므로, start_time을 now로 갱신하고
-            # remain에서 (enter→away) 구간도 차감해야 함
-            # 더 깔끔하게: active구간 차감 + away 절반 차감, start_time = now
-            active_deduct = max(0, math.ceil(active_sec / 60)) 
-            total_deduct = active_deduct + half_deduct
+            away_sec = (now - user.away_start).total_seconds()
+            away_min = math.ceil(away_sec / 60)
+            user.away_time += away_min
+            half_deduct=math.ceil(away_min/2)
+           
+         
+          
+            active_sec = (user.away_start - user.start_time).total_seconds()
+            active_deduct = max(0, math.ceil(active_sec / 60))
+           
+            total_deduct  = active_deduct + half_deduct
             user.remain   = max(0, user.remain - total_deduct)
-            # 위에서 half_deduct만 뺐으므로 active_deduct도 빼야 함
-            # 아... remain에서 half_deduct만 뺐는데, 사실 active 구간은 이미 남아있는 remain에 반영 안 됨
-            # 정리: remain은 구매 시점의 초기값에서 시작. start_time 이후 경과분만큼 차감해야 함.
-            # resume 시: remain -= (active + half_away), start_time = now
-            # 이미 half_deduct를 뺐으므로 총 = active_deduct + half_deduct
             user.start_time = now
             user.away_start = None
 
