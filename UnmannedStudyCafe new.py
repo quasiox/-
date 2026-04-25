@@ -550,6 +550,7 @@ class StudyCafe:
                         f"정기권 사용자에게 자리비움 시각이 기록되어 있음 "
                         f"(정기권은 pause 불가): "
                         f"away_start={u.away_start.strftime(DT_FMT)}")
+            
     
     def _verify_remain_range(self, user: User, i: int):
         """이용권 종류별 잔여시간 가능 범위 검사"""
@@ -1048,13 +1049,12 @@ class StudyCafe:
                 if ticket.type == 1:  # 정기권
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
-                    user.start_time = None
                     user.away_start = None
                 elif ticket.type == 2:  # 시간권
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
-                    user.start_time = now
-                    user.away_start = None
+                    
+                
         for s in self.sessions:
             if s.exit_time is None:
                 if s.ticket_id == 2:
