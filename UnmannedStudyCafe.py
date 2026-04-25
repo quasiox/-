@@ -466,6 +466,8 @@ class StudyCafe:
         seen_ids = set()
         seen_phones = set()
         ticket_ids = {t.id for t in self.tickets}
+        now = self.get_now()
+        seat_user_ids = {s.user_id for s in self.seats if s.user_id}
 
         for i, u in enumerate(self.users, 1):
             line = u.to_line()
@@ -504,6 +506,7 @@ class StudyCafe:
                     self._integrity_exit("User", i,
                         f"중복된 전화번호: {u.phone}", line)
                 seen_phones.add(u.phone)
+         
 
             # 이용권 아이디 형식: 0(미보유) 또는 티켓릴레이션에 존재하는 값
             if u.ticket_id < 0:
@@ -520,6 +523,7 @@ class StudyCafe:
             if u.ticket_id == 0 and u.remain != 0:
                 self._integrity_exit("User", i,
                     f"이용권이 없는데 잔여시간이 있음: remain={u.remain}", line)
+            self._verify_remain_range(u,i)
 
             # 사용시점 (start_time, away_start) — from_line에서 형식은 이미 검증됨.
             # 추가로 논리적 일관성을 본다.
@@ -529,6 +533,68 @@ class StudyCafe:
             if u.away_start and u.start_time and u.away_start < u.start_time:
                 self._integrity_exit("User", i,
                     "자리비움 시작 시각이 입장 시각보다 빠름", line)
+            if u.start_time and u.start_time > now:
+                self._integrity_exit("User", i,
+                    f"사용시점이 현재시각보다 미래임: "
+                    f"start_time={u.start_time.strftime(DT_FMT)}, "
+                    f"현재시각={now.strftime(DT_FMT)}", line)
+
+            if u.away_start and u.away_start > now:
+                self._integrity_exit("User", i,
+                    f"자리비움시점이 현재시각보다 미래임: "
+                    f"away_start={u.away_start.strftime(DT_FMT)}, "
+                    f"현재시각={now.strftime(DT_FMT)}", line)
+            if u.away_start and u.ticket_id != 0:
+                ticket = self._find_ticket(u.ticket_id)
+                if ticket and ticket.type == 1:
+                    self._integrity_exit("User", i,
+                        f"정기권 사용자에게 자리비움 시각이 기록되어 있음 "
+                        f"(정기권은 pause 불가): "
+                        f"away_start={u.away_start.strftime(DT_FMT)}",line)
+            if not u.start_time and u.id in seat_user_ids:
+                self._integrity_exit("User", i,
+                        f"입장 중 아니지만 (start_time 없음) 좌석릴레이션에 있음: {u.id}", line)
+            if u.start_time and u.id not in seat_user_ids:
+                self._integrity_exit("User", i,
+                        f"입장 중 이지만 (start_time 있음) 좌석릴레이션에 없음: {u.id}", line)
+            
+    
+    def _verify_remain_range(self, user: User, i: int):
+        """이용권 종류별 잔여시간 가능 범위 검사"""
+        if user.ticket_id == 0:
+             return  # 이용권 없음 → 이미 위에서 remain==0 검사함
+
+        ticket = self._find_ticket(user.ticket_id)
+        if ticket is None:
+            return  # 이미 위에서 참조 무결성 검사함
+
+        line = user.to_line()
+
+        if ticket.type == 1:  # 정기권: 0 < remain ≤ duration × 60
+            max_remain = ticket.duration * 60
+            if not (0 < user.remain <= max_remain):
+                self._integrity_exit("User", i,
+                    f"정기권 잔여시간 범위 오류: remain={user.remain}분 "
+                    f"(허용 범위: 1 ~ {max_remain}분)", line)
+
+        elif ticket.type == 2:  # 시간권: 0 < remain ≤ duration × 60
+            max_remain = ticket.duration * 60
+            if not (0 < user.remain <= max_remain):
+                self._integrity_exit("User", i,
+                    f"시간권 잔여시간 범위 오류: remain={user.remain}분 "
+                    f"(허용 범위: 1 ~ {max_remain}분)", line)
+
+        elif ticket.type == 3:  # 종일권: remain == 1 고정
+            if user.remain != 1:
+                self._integrity_exit("User", i,
+                    f"종일권 잔여시간 오류: remain={user.remain} "
+                    f"(종일권은 반드시 1이어야 함)", line)
+
+        elif ticket.type == 4:  # 기간권: 0 < remain ≤ duration
+            if not (0 < user.remain <= ticket.duration):
+                self._integrity_exit("User", i,
+                    f"기간권 잔여일수 범위 오류: remain={user.remain}일 "
+                    f"(허용 범위: 1 ~ {ticket.duration}일)", line)
 
     def _verify_ticket_relation(self):
         """티켓 릴레이션: 고유번호 형식, 종류, 기간(1 이상), 가격(음수가 아닌 정수)"""
@@ -544,9 +610,9 @@ class StudyCafe:
                 self._integrity_exit("Ticket", i, f"중복된 고유번호: {t.id}", line)
             seen_ids.add(t.id)
 
-            if t.type < 0 or t.type > len(self.tickets) or t.type != int(t.type):
+            if t.type not in (1,2,3,4) or t.type != int(t.type):
                 self._integrity_exit("Ticket", i,
-                    f"이용권 종류는 1~{len(self.tickets)} 중 하나여야 함: {t.type}", line)
+                    f"이용권 종류는 1~4 중 하나여야 함: {t.type}", line)
 
             # 기간 (1 이상)
             if t.duration < 1:
@@ -564,7 +630,6 @@ class StudyCafe:
         seen_ids = set()
         seen_users = set()
         user_map = {u.id: u for u in self.users}
-        session_map = {s.user_id: s for s in self.sessions}
 
         for i, s in enumerate(self.seats, 1):
             line = s.to_line()
@@ -595,13 +660,6 @@ class StudyCafe:
                 if s.user_id in seen_users:
                     self._integrity_exit("Seat", i,
                         f"사용자 '{s.user_id}'가 복수 좌석을 점유 중", line)
-                if s.user_id not in session_map:
-                    self._integrity_exit("Seat", i,
-                        f"사용자 '{s.user_id}'가 세션에 존재하지 않음", line)
-                elif s.user_id in session_map:
-                    if session_map[s.user_id].seat_id != s.id:
-                        self._integrity_exit("Seat", i,
-                            f"사용자 '{s.user_id}'가 세션에 존재하지만 좌석이 일치하지 않음", line)
                 seen_users.add(s.user_id)
 
     def _verify_session_relation(self):
@@ -998,12 +1056,21 @@ class StudyCafe:
                 if ticket.type == 1:  # 정기권
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
+                    user.away_start = None
                 elif ticket.type == 2:  # 시간권
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
+                    
+                
         for s in self.sessions:
             if s.exit_time is None:
-                s.usage_min = math.floor((now - s.enter_time).total_seconds() / 60)
+                if s.ticket_id == 2:
+                    user = self._find_user(s.user_id)
+                    if user.away_start:
+                        s.usage_min += math.floor((now - user.away_start).total_seconds() / 120)
+                        user.away_start = None
+                else:
+                    s.usage_min = math.floor((now - s.enter_time).total_seconds() / 60)
 
         self.save_all()
         print("... 프로그램을 종료합니다.")
@@ -1461,6 +1528,8 @@ class StudyCafe:
         if ticket and ticket.type == 2 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
+            user.start_time = now  # 기준 시점 갱신
+            user.away_start = None
             if user.remain <= 0:
                 user.ticket_id = 0
                 user.remain = 0
@@ -1472,6 +1541,8 @@ class StudyCafe:
         elif ticket and ticket.type == 1 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
+            user.start_time = now  # ← None 아닌 now로 갱신 (좌석 유지)
+            user.away_start = None
             if user.remain <= 0:
                 user.ticket_id = 0
                 user.remain = 0
@@ -1555,6 +1626,11 @@ class StudyCafe:
             print(f"... 자리비움이 해제되었습니다.")
             print(f"    자리비움 시간: {fmt_minutes(away_min)} / 차감 시간: {fmt_minutes(half_deduct)} / "
                   f"잔여 시간: {fmt_minutes(user.remain)} ({ticket.type_name()})")
+        else:
+            # 시간권 아닌 경우: 자리비움 해제만 (정기권은 원래 입장 중에만 차감이므로
+            # 자리비움 동안에도 전체 차감됨 - 사용자 요청)
+            user.away_start = None
+            print(f"... 자리비움이 해제되었습니다.")
 
         self._save_users()
 
