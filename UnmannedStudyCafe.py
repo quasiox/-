@@ -564,6 +564,7 @@ class StudyCafe:
         seen_ids = set()
         seen_users = set()
         user_map = {u.id: u for u in self.users}
+        session_map = {s.user_id: s for s in self.sessions}
 
         for i, s in enumerate(self.seats, 1):
             line = s.to_line()
@@ -594,6 +595,13 @@ class StudyCafe:
                 if s.user_id in seen_users:
                     self._integrity_exit("Seat", i,
                         f"사용자 '{s.user_id}'가 복수 좌석을 점유 중", line)
+                if s.user_id not in session_map:
+                    self._integrity_exit("Seat", i,
+                        f"사용자 '{s.user_id}'가 세션에 존재하지 않음", line)
+                elif s.user_id in session_map:
+                    if session_map[s.user_id].seat_id != s.id:
+                        self._integrity_exit("Seat", i,
+                            f"사용자 '{s.user_id}'가 세션에 존재하지만 좌석이 일치하지 않음", line)
                 seen_users.add(s.user_id)
 
     def _verify_session_relation(self):
@@ -990,22 +998,12 @@ class StudyCafe:
                 if ticket.type == 1:  # 정기권
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
-                    user.start_time = None
-                    user.away_start = None
                 elif ticket.type == 2:  # 시간권
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
-                    user.start_time = now
-                    user.away_start = None
         for s in self.sessions:
             if s.exit_time is None:
-                if s.ticket_id == 2:
-                    user = self._find_user(s.user_id)
-                    if user.away_start:
-                        s.usage_min += math.floor((now - user.away_start).total_seconds() / 120)
-                        user.away_start = None
-                else:
-                    s.usage_min = math.floor((now - s.enter_time).total_seconds() / 60)
+                s.usage_min = math.floor((now - s.enter_time).total_seconds() / 60)
 
         self.save_all()
         print("... 프로그램을 종료합니다.")
@@ -1463,8 +1461,6 @@ class StudyCafe:
         if ticket and ticket.type == 2 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
-            user.start_time = now  # 기준 시점 갱신
-            user.away_start = None
             if user.remain <= 0:
                 user.ticket_id = 0
                 user.remain = 0
@@ -1476,8 +1472,6 @@ class StudyCafe:
         elif ticket and ticket.type == 1 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
-            user.start_time = now  # ← None 아닌 now로 갱신 (좌석 유지)
-            user.away_start = None
             if user.remain <= 0:
                 user.ticket_id = 0
                 user.remain = 0
@@ -1561,11 +1555,6 @@ class StudyCafe:
             print(f"... 자리비움이 해제되었습니다.")
             print(f"    자리비움 시간: {fmt_minutes(away_min)} / 차감 시간: {fmt_minutes(half_deduct)} / "
                   f"잔여 시간: {fmt_minutes(user.remain)} ({ticket.type_name()})")
-        else:
-            # 시간권 아닌 경우: 자리비움 해제만 (정기권은 원래 입장 중에만 차감이므로
-            # 자리비움 동안에도 전체 차감됨 - 사용자 요청)
-            user.away_start = None
-            print(f"... 자리비움이 해제되었습니다.")
 
         self._save_users()
 
