@@ -467,6 +467,7 @@ class StudyCafe:
         seen_phones = set()
         ticket_ids = {t.id for t in self.tickets}
         now = self.get_now()
+        seat_user_ids = {s.user_id for s in self.seats if s.user_id}
 
         for i, u in enumerate(self.users, 1):
             line = u.to_line()
@@ -549,8 +550,10 @@ class StudyCafe:
                     self._integrity_exit("User", i,
                         f"정기권 사용자에게 자리비움 시각이 기록되어 있음 "
                         f"(정기권은 pause 불가): "
-                        f"away_start={u.away_start.strftime(DT_FMT)}")
-            
+                        f"away_start={u.away_start.strftime(DT_FMT)}",line)
+            if not u.start_time and u.id in seat_user_ids:
+                self._integrity_exit("User", i,
+                        f"입장 중 아니지만 (start_time 없음) 좌석릴레이션에 있음: {u.id}", line)
     
     def _verify_remain_range(self, user: User, i: int):
         """이용권 종류별 잔여시간 가능 범위 검사"""
@@ -603,9 +606,9 @@ class StudyCafe:
                 self._integrity_exit("Ticket", i, f"중복된 고유번호: {t.id}", line)
             seen_ids.add(t.id)
 
-            if t.type < 0 or t.type > len(self.tickets) or t.type != int(t.type):
+            if t.type < 0 or t.type not in (1,2,3,4) or t.type != int(t.type):
                 self._integrity_exit("Ticket", i,
-                    f"이용권 종류는 1~{len(self.tickets)} 중 하나여야 함: {t.type}", line)
+                    f"이용권 종류는 1~4 중 하나여야 함: {t.type}", line)
 
             # 기간 (1 이상)
             if t.duration < 1:
