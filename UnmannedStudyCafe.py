@@ -170,6 +170,7 @@ class User:
         self.remain: int = remain
         self.start_time: datetime | None = start_time
         self.away_start: datetime | None = away_start
+        self.away_time: int = 0
         self.time_offset = timedelta(0)
 
     def is_admin(self):
@@ -565,14 +566,16 @@ class StudyCafe:
         seen_users = set()
         user_map = {u.id: u for u in self.users}
         session_map = {s.user_id: s for s in self.sessions}
+        num = 0
 
         for i, s in enumerate(self.seats, 1):
+            num += 1
             line = s.to_line()
 
             # 좌석번호: 1 ≤ id ≤ 12 (TOTAL_SEATS)
-            if s.id < 1 or s.id != int(s.id):
+            if s.id != num:
                 self._integrity_exit("Seat", i,
-                    f"좌석번호는 1 이상의 자연수여야 함: {s.id}", line)
+                    f"좌석번호는 {num} 이어야 함: {s.id}", line)
             if s.id > TOTAL_SEATS:
                 self._integrity_exit("Seat", i,
                     f"좌석번호는 {TOTAL_SEATS} 이하여야 함: {s.id}", line)
@@ -598,10 +601,12 @@ class StudyCafe:
                 if s.user_id not in session_map:
                     self._integrity_exit("Seat", i,
                         f"사용자 '{s.user_id}'가 세션에 존재하지 않음", line)
-                elif s.user_id in session_map:
-                    if session_map[s.user_id].seat_id != s.id:
-                        self._integrity_exit("Seat", i,
-                            f"사용자 '{s.user_id}'가 세션에 존재하지만 좌석이 일치하지 않음", line)
+                elif session_map[s.user_id].exit_time is not None:
+                    self._integrity_exit("Seat", i,
+                        f"사용자 '{s.user_id}'가 세션에 존재하지만 좌석을 점유하지 않음", line)
+                elif session_map[s.user_id].seat_id != s.id:
+                    self._integrity_exit("Seat", i,
+                        f"사용자 '{s.user_id}'가 세션에 존재하지만 좌석이 일치하지 않음", line)
                 seen_users.add(s.user_id)
 
     def _verify_session_relation(self):
@@ -799,6 +804,15 @@ class StudyCafe:
             old_dur = ticket.duration_str()
             user.ticket_id = 0
             user.remain = 0
+            if(ticket.type == 1):
+                user.exit_time = user.start_time + timedelta(minutes=ticket.duration)
+            elif(ticket.type == 2):
+                user.exit_time = user.start_time + timedelta(minutes=ticket.duration) + timedelta(minutes=(user.away_time))
+                user.away_time = 0
+            elif(ticket.type == 3):
+                user.exit_time = user.start_time + timedelta(days=1)
+            elif(ticket.type == 4):
+                user.exit_time = user.start_time + timedelta(days=ticket.duration)
             user.start_time = None
             user.away_start = None
             # 좌석 반납
@@ -1532,6 +1546,7 @@ class StudyCafe:
         ticket = self._find_ticket(user.ticket_id)
         away_sec = (now - user.away_start).total_seconds()
         away_min = math.ceil(away_sec / 60)
+        user.away_time += away_min
 
         if ticket and ticket.type == 2:
             # 시간권: 절반만 차감
