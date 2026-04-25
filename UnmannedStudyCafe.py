@@ -544,10 +544,9 @@ class StudyCafe:
                 self._integrity_exit("Ticket", i, f"중복된 고유번호: {t.id}", line)
             seen_ids.add(t.id)
 
-            # 종류: 1(정기권) / 2(시간권) / 3(종일권) / 4(기간권)
-            if t.type not in (1, 2, 3, 4):
+            if t.type < 0 or t.type > len(self.tickets) or t.type != int(t.type):
                 self._integrity_exit("Ticket", i,
-                    f"이용권 종류는 1~4 중 하나여야 함: {t.type}", line)
+                    f"이용권 종류는 1~{len(self.tickets)} 중 하나여야 함: {t.type}", line)
 
             # 기간 (1 이상)
             if t.duration < 1:
@@ -570,7 +569,7 @@ class StudyCafe:
             line = s.to_line()
 
             # 좌석번호: 1 ≤ id ≤ 12 (TOTAL_SEATS)
-            if s.id < 1:
+            if s.id < 1 or s.id != int(s.id):
                 self._integrity_exit("Seat", i,
                     f"좌석번호는 1 이상의 자연수여야 함: {s.id}", line)
             if s.id > TOTAL_SEATS:
@@ -598,7 +597,7 @@ class StudyCafe:
                 seen_users.add(s.user_id)
 
     def _verify_session_relation(self):
-        """세션 릴레이션: 유저 아이디, 이용권 고유번호(종류 1,2,3),
+        """세션 릴레이션: 유저 아이디, 이용권 고유번호(종류 1~len(self.ticket)),
         좌석번호(≤12 + 좌석릴레이션 유저와 일치), 입장/퇴장 일시 형식,
         입장 시각 공백 아님, (현재시각 - 입장일시) > 시간권×2 이면 자동 퇴장,
         이용시간 = 퇴장 - 입장(분) 일치 여부"""
@@ -617,14 +616,14 @@ class StudyCafe:
                 self._integrity_exit("Session", i,
                     f"유저릴레이션에 존재하지 않는 사용자: {s.user_id}", line)
 
-            # 이용권 고유번호: 티켓릴레이션에 존재 + 종류가 1/2/3 (정기권/시간권/종일권)
+            # 이용권 고유번호: 티켓릴레이션에 존재
             ticket = ticket_map.get(s.ticket_id)
             if ticket is None:
                 self._integrity_exit("Session", i,
                     f"존재하지 않는 이용권 고유번호: {s.ticket_id}", line)
-            if ticket.type not in (1, 2, 3):
+            if ticket.type < 0 or ticket.type > len(self.tickets) or ticket.type != int(ticket.type):
                 self._integrity_exit("Session", i,
-                    f"세션의 이용권 종류는 1,2,3 중 하나여야 함: type={ticket.type}", line)
+                    f"세션의 이용권 종류는 1~{len(self.tickets)} 중 하나여야 함: type={ticket.type}", line)
 
             # 좌석번호: 12 이하
             if s.seat_id < 1 or s.seat_id > TOTAL_SEATS:
@@ -998,6 +997,15 @@ class StudyCafe:
                     user.remain = max(0, user.remain - deduction)
                     user.start_time = now
                     user.away_start = None
+        for s in self.sessions:
+            if s.exit_time is None:
+                if s.ticket_id == 2:
+                    user = self._find_user(s.user_id)
+                    if user.away_start:
+                        s.usage_min += math.floor((now - user.away_start).total_seconds() / 120)
+                        user.away_start = None
+                else:
+                    s.usage_min = math.floor((now - s.enter_time).total_seconds() / 60)
 
         self.save_all()
         print("... 프로그램을 종료합니다.")
@@ -1455,16 +1463,15 @@ class StudyCafe:
         if ticket and ticket.type == 2 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
-            #user.start_time = now  # 기준 시점 갱신
+            user.start_time = now  # 기준 시점 갱신
             user.away_start = None
             if user.remain <= 0:
                 user.ticket_id = 0
                 user.remain = 0
                 user.start_time = None
-        #시간권은 로그아웃 시 좌석 반납
-            seat = self._find_seat_by_user(user.id)
-            if seat:
-                seat.user_id = ""
+                seat = self._find_seat_by_user(user.id)
+                if seat:
+                    seat.user_id = ""
 
         elif ticket and ticket.type == 1 and user.start_time:
             deduction = self._calc_deduction(user, ticket, now)
