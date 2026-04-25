@@ -554,6 +554,10 @@ class StudyCafe:
             if not u.start_time and u.id in seat_user_ids:
                 self._integrity_exit("User", i,
                         f"입장 중 아니지만 (start_time 없음) 좌석릴레이션에 있음: {u.id}", line)
+            if u.start_time and u.id not in seat_user_ids:
+                self._integrity_exit("User", i,
+                        f"입장 중 이지만 (start_time 있음) 좌석릴레이션에 없음: {u.id}", line)
+            
     
     def _verify_remain_range(self, user: User, i: int):
         """이용권 종류별 잔여시간 가능 범위 검사"""
@@ -606,7 +610,7 @@ class StudyCafe:
                 self._integrity_exit("Ticket", i, f"중복된 고유번호: {t.id}", line)
             seen_ids.add(t.id)
 
-            if t.type < 0 or t.type not in (1,2,3,4) or t.type != int(t.type):
+            if t.type not in (1,2,3,4) or t.type != int(t.type):
                 self._integrity_exit("Ticket", i,
                     f"이용권 종류는 1~4 중 하나여야 함: {t.type}", line)
 
