@@ -22,7 +22,6 @@ except ImportError:
 ROWS = 4
 COLS = 3
 TOTAL_SEATS = ROWS * COLS
-REFRESH_TIME = None
 SHUTDOWN_SEAT_ID   = 0
 SHUTDOWN_TICKET_ID = 0
 
@@ -275,15 +274,13 @@ class Session:
         self.enter_time: datetime = enter_time
         self.exit_time: datetime | None = exit_time
         self.usage_min: int = usage_min
+    
 
+    
     def to_line(self):
         et = self.enter_time.strftime(DT_FMT_SEC)
         xt = self.exit_time.strftime(DT_FMT_SEC) if self.exit_time else ""
         return f"{self.user_id}.{self.ticket_id}.{self.seat_id}.{et}.{xt}.{self.usage_min}"
-    
-    def is_shutdown_record(self):
-        """admin + 좌석 0번 세션 = 종료 기록"""
-        return self.user_id == ADMIN_ID and self.seat_id == SHUTDOWN_SEAT_ID
 
     @staticmethod
     def from_line(line):
@@ -300,6 +297,10 @@ class Session:
             return Session(uid, tid, sid, enter, exit_t, usage)
         except Exception:
             return None
+    def is_shutdown_record(self):
+        """admin + 좌석 0번 세션 = 종료 기록"""
+        return self.user_id == ADMIN_ID and self.seat_id == SHUTDOWN_SEAT_ID
+
 
 
 # ═══════════════════════════════════════════
@@ -447,7 +448,6 @@ class StudyCafe:
 
     def _save_sessions(self):
         self._save_file(SESSION_FILE, self.sessions)
-
     def _write_shutdown_record(self, now: datetime):
         """종료 시각 기록 + 자리비움 중 시간권 유저 remain 갱신"""
 
@@ -492,6 +492,9 @@ class StudyCafe:
         self._save_users()
         self._save_sessions()
 
+    # 종료 기록 세션 추가 (enter = exit = now)
+   
+
     def save_all(self):
         self._save_users()
         self._save_seats()
@@ -518,7 +521,7 @@ class StudyCafe:
         self._verify_seat_relation()
         self._verify_session_relation()
         print("... 무결성 검사가 완료되었습니다.")
-
+     
     def _verify_user_relation(self):
         """유저 릴레이션: 아이디 형식, 비밀번호 존재 여부, 전화번호 형식,
         이용권 아이디 형식, 잔여시간, 사용시점"""
@@ -565,6 +568,7 @@ class StudyCafe:
                     self._integrity_exit("User", i,
                         f"중복된 전화번호: {u.phone}", line)
                 seen_phones.add(u.phone)
+         
 
             # 이용권 아이디 형식: 0(미보유) 또는 티켓릴레이션에 존재하는 값
             if u.ticket_id < 0:
@@ -581,6 +585,8 @@ class StudyCafe:
             if u.ticket_id == 0 and u.remain != 0:
                 self._integrity_exit("User", i,
                     f"이용권이 없는데 잔여시간이 있음: remain={u.remain}", line)
+                
+            self._verify_remain_range(u,i)
 
             # 사용시점 (start_time, away_start) — from_line에서 형식은 이미 검증됨.
             # 추가로 논리적 일관성을 본다.
@@ -659,7 +665,7 @@ class StudyCafe:
             line = t.to_line()
 
             # 고유번호 형식: 1 이상의 자연수 + 유일성
-            if t.id < 0 or t.id > len(self.tickets) or t.id != int(t.id):
+            if t.id < 1:
                 self._integrity_exit("Ticket", i,
                     f"이용권 고유번호는 1 이상의 자연수여야 함: {t.id}", line)
             if t.id in seen_ids:
@@ -680,13 +686,14 @@ class StudyCafe:
                 self._integrity_exit("Ticket", i,
                     f"이용권 가격은 음수일 수 없음: {t.price}", line)
 
+
     def _verify_seat_relation(self):
         """좌석 릴레이션: 좌석번호(12 이하 자연수),
         사용자 아이디(유저릴레이션상에 있는지, 이용권이 있는지)"""
         seen_ids = set()
         seen_users = set()
         user_map = {u.id: u for u in self.users}
-        session_map = {s.user_id: s for s in self.sessions}
+        session_map = {s.user_id: s for s in self.sessions if not s.is_shutdown_record()}
         num = 0
 
         for i, s in enumerate(self.seats, 1):
@@ -740,24 +747,18 @@ class StudyCafe:
         seat_map = {s.id: s for s in self.seats}
         now = self.get_now()
         modified = False
-        global REFRESH_TIME
+        active_users = set()
+
+        
+
         for i, s in enumerate(self.sessions, 1):
             line = s.to_line()
-        for s in self.sessions:
-            if s.user_id == "admin" and s.exit_time is not None:
-                REFRESH_TIME = s.exit_time
             if s.is_shutdown_record():
                 if s.exit_time is None or s.exit_time != s.enter_time:
                     self._integrity_exit("Session", i,
                     "종료 기록 세션 형식 오류 "
                     "(enter_time == exit_time 이어야 함)", line)
                 continue  # 나머지 검사 건너뜀
-
-        for i, s in enumerate(self.sessions, 1):
-            line = s.to_line()
-            if(s.user_id == "admin"):
-                REFRESH_TIME = s.exit_time
-                continue
             # 유저가 릴레이션상에 있는지
             user = user_map.get(s.user_id)
             if user is None:
@@ -769,7 +770,7 @@ class StudyCafe:
             if ticket is None:
                 self._integrity_exit("Session", i,
                     f"존재하지 않는 이용권 고유번호: {s.ticket_id}", line)
-            if ticket.type < 0 or ticket.type > len(self.tickets) or ticket.type != int(ticket.type):
+            if ticket.type not in (1,2,3,4):
                 self._integrity_exit("Session", i,
                     f"세션의 이용권 종류는 1~{len(self.tickets)} 중 하나여야 함: type={ticket.type}", line)
 
@@ -783,8 +784,14 @@ class StudyCafe:
             if s.enter_time is None:
                 self._integrity_exit("Session", i, "입장 시각이 비어있음", line)
 
+        
+
             # 진행 중 세션: 좌석릴레이션상의 유저와 동일한지
             if s.exit_time is None:
+                if s.user_id in active_users:
+                    self._integrity_exit("Session", i,
+                        f"유저('{s.user_id}')의 진행 중인 세션(퇴장시간 없음)이 2개 이상 존재합니다.", line)
+                active_users.add(s.user_id)
                 seat = seat_map.get(s.seat_id)
                 if seat is None:
                     self._integrity_exit("Session", i,
@@ -793,26 +800,25 @@ class StudyCafe:
                     self._integrity_exit("Session", i,
                         f"진행 중 세션의 좌석 사용자 불일치: "
                         f"session={s.user_id} vs seat={seat.user_id or '(빈 좌석)'}", line)
-
+            if s.enter_time > now:
+                self._integrity_exit("Session", i,
+                        f"입장 시각이 현재시각보다 미래임: "
+                        f"enter_time={s.enter_time.strftime(DT_FMT_SEC)}", line)
             # 입장/퇴장 순서
-            user = user_map[s.user_id]
-            elapsed_min = (now - REFRESH_TIME).total_seconds() // 60
+            if s.exit_time is not None and s.exit_time < s.enter_time:
+                self._integrity_exit("Session", i,
+                    "퇴장 시각이 입장 시각보다 빠름", line)
 
-            if s.exit_time is None and ticket.type == 2 and user.away_start is None:
-                if elapsed_min > user.remain:
-                    # 올바른 덧셈: 기준시각(REFRESH_TIME) + 시간덩어리(timedelta)
-                    s.exit_time = REFRESH_TIME + timedelta(minutes=user.remain)
-                    s.usage_min = int((s.exit_time - s.enter_time).total_seconds() // 60)
+            # (현재시각 - 입장일시) > 시간권 × 2 이면 퇴장일시 기록 (자동 마감)
+            if s.exit_time is None and ticket.type == 2:
+                limit = timedelta(hours=ticket.duration * 2)
+                if (now - s.enter_time) > limit:
+                    s.exit_time = s.enter_time + limit
+                    s.usage_min = int(
+                        (s.exit_time - s.enter_time).total_seconds() // 60)
                     modified = True
-                    
-            elif s.exit_time is None and ticket.type == 2 and user.away_start:
-                limit = user.remain * 2
-                if elapsed_min > limit:
-                    # limit(정수)를 timedelta로 감싸서 더합니다
-                    s.exit_time = REFRESH_TIME + timedelta(minutes=limit)
-                    s.usage_min = int((s.exit_time - s.enter_time).total_seconds() // 60)
-                    modified = True
-                
+                    print(f"..! 안내: SessionRelation.txt {i}행 - "
+                          f"시간권 최대 이용시간(×2) 초과로 자동 퇴장 처리됨")
 
             # 이용시간 = 퇴장 - 입장(분). 일치하지 않으면 오류 후 종료
             if s.exit_time is not None:
@@ -821,6 +827,7 @@ class StudyCafe:
                     self._integrity_exit("Session", i,
                         f"이용시간 불일치: 저장값={s.usage_min}분, "
                         f"계산값(퇴장-입장)={expected}분", line)
+
 
         if modified:
             self._save_sessions()
@@ -909,57 +916,44 @@ class StudyCafe:
             return math.ceil(elapsed_sec / 60)
 
     def _check_expiry(self, user: User, now: datetime = None):
-        """이용권 만료 확인 및 처리. 만료 시 True 반환"""
-        if now is None:
-            now = self.get_now()
-        if not user.has_ticket():
-            return False
+            if now is None:
+                now = self.get_now()
+            if not user.has_ticket():
+                return False
 
-        ticket = self._find_ticket(user.ticket_id)
-        if ticket is None:
-            user.ticket_id = 0
-            user.remain = 0
-            return True
+            ticket = self._find_ticket(user.ticket_id)
+            if ticket is None:
+                user.ticket_id = 0
+                user.remain = 0
+                return True
 
-        expired = False
+            expired = False
 
-        if ticket.type in (1, 2):
-            eff = self._calc_effective_remain(user, now)
-            if eff <= 0:
-                expired = True
-
-        elif ticket.type == 3:  # 종일권: 날짜 변경 시 만료
-            if user.start_time and user.start_time.date() != now.date():
-                expired = True
-
-        elif ticket.type == 4:  # 기간권
-            if user.start_time:
-                expire_date = user.start_time.date() + timedelta(days=ticket.duration)
-                if now.date() >= expire_date:
+            if ticket.type in (1, 2):
+                eff = self._calc_effective_remain(user, now)
+                if eff <= 0:
                     expired = True
 
-        if expired:
-            old_name = ticket.type_name()
-            old_dur = ticket.duration_str()
-            user.ticket_id = 0
-            user.remain = 0
-            if(ticket.type == 1):
-                user.exit_time = user.start_time + timedelta(minutes=ticket.duration)
-            elif(ticket.type == 2):
-                user.exit_time = user.start_time + timedelta(minutes=ticket.duration) + timedelta(minutes=(user.away_time))
-                user.away_time = 0
-            elif(ticket.type == 3):
-                user.exit_time = user.start_time + timedelta(days=1)
-            elif(ticket.type == 4):
-                user.exit_time = user.start_time + timedelta(days=ticket.duration)
-            user.start_time = None
-            user.away_start = None
-            # 좌석 반납
-            seat = self._find_seat_by_user(user.id)
-            if seat:
-                seat.user_id = ""
-            return True
-        return False
+            elif ticket.type == 3:
+                if user.start_time and user.start_time.date() != now.date():
+                    expired = True
+
+            elif ticket.type == 4:
+                if user.start_time:
+                    expire_date = user.start_time.date() + timedelta(days=ticket.duration)
+                    if now.date() >= expire_date:
+                        expired = True
+
+            if expired:
+                user.ticket_id  = 0
+                user.remain     = 0
+                user.start_time = None
+                user.away_start = None
+                seat = self._find_seat_by_user(user.id)
+                if seat:
+                    seat.user_id = ""
+                return True
+            return False
 
     # ─── 퇴장 처리 핵심 로직 ───
     def _do_exit(self, user: User, now: "datetime | None" = None) -> tuple[int, int]:
@@ -991,7 +985,7 @@ class StudyCafe:
         usage_min = math.floor((now - self._get_session_enter(user)).total_seconds() / 60) \
             if self._get_session_enter(user) else 0
         for s in reversed(self.sessions):
-            if s.user_id == user.id and s.exit_time is None:
+            if s.user_id == user.id and s.exit_time is None and not s.is_shutdown_record():
                 s.exit_time = now
                 s.usage_min = usage_min
                 break
@@ -1154,14 +1148,15 @@ class StudyCafe:
                 elif ticket.type == 2:  # 시간권
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
+                    user.start_time = now
+                    if user.is_away():
+                        user.away_start = now
         for s in self.sessions:
-            if s.exit_time is None:
+            if s.exit_time is None and not s.is_shutdown_record():
                 s.usage_min = math.floor((now - s.enter_time).total_seconds() / 60)
         
         self._write_shutdown_record(now)
-
         self.save_all()
-
         print("... 프로그램을 종료합니다.")
         self.running = False
 
@@ -1322,7 +1317,6 @@ class StudyCafe:
         now = self.get_now()
         seat.user_id = user.id
         user.start_time = now
-        user.away_start = None
 
         # 세션 추가
         self.sessions.append(Session(user.id, user.ticket_id, seat.id, now))
@@ -1594,6 +1588,7 @@ class StudyCafe:
 
     def _admin_session_list(self):
         print("=== 세션 기록 ===")
+        # 종료 기록 세션 제외
         real_sessions = [s for s in self.sessions if not s.is_shutdown_record()]
         if not real_sessions:
             print("    기록이 없습니다.")
@@ -1640,8 +1635,7 @@ class StudyCafe:
                     seat.user_id = ""
 
         for s in reversed(self.sessions):
-            if s.user_id == user.id and s.exit_time is None:
-                s.exit_time = None
+            if s.user_id == user.id and s.exit_time is None and not s.is_shutdown_record():
                 enter = s.enter_time
                 s.usage_min = math.floor((now - enter).total_seconds() / 60)
                 break
@@ -1688,9 +1682,7 @@ class StudyCafe:
 
         now = self.get_now()
         ticket = self._find_ticket(user.ticket_id)
-        away_sec = (now - user.away_start).total_seconds()
-        away_min = math.ceil(away_sec / 60)
-        user.away_time += away_min
+       
 
         if ticket and ticket.type == 2:
             away_sec = (now - user.away_start).total_seconds()
@@ -1701,7 +1693,7 @@ class StudyCafe:
          
           
             active_sec = (user.away_start - user.start_time).total_seconds()
-            active_deduct = max(0, math.ceil(active_sec / 60))
+            active_deduct = math.ceil(active_sec / 60)
            
             total_deduct  = active_deduct + half_deduct
             user.remain   = max(0, user.remain - total_deduct)
@@ -1725,13 +1717,9 @@ class StudyCafe:
                 if ticket.type == 1:
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
-                    user.start_time = None
-                    user.away_start = None
                 elif ticket.type == 2:
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
-                    user.start_time = now
-                    user.away_start = None
         for s in self.sessions:
             if s.exit_time is None and not s.is_shutdown_record():  # ← 조건 추가
                 s.usage_min = math.floor((now - s.enter_time).total_seconds() / 60)
@@ -1739,6 +1727,8 @@ class StudyCafe:
         self._write_shutdown_record(now)
         self.save_all()
         self.running = False
+
+
     def cmd_set_time(self, args: list[str]):
         """
         특정 날짜와 시각으로 프로그램 시간을 변경합니다 (미래로만 이동 가능).
