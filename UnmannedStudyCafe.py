@@ -22,6 +22,7 @@ except ImportError:
 ROWS = 4
 COLS = 3
 TOTAL_SEATS = ROWS * COLS
+REFRESH_TIME = None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_DIR = os.path.join(BASE_DIR, "Database")
@@ -619,10 +620,13 @@ class StudyCafe:
         seat_map = {s.id: s for s in self.seats}
         now = self.get_now()
         modified = False
+        global REFRESH_TIME
 
         for i, s in enumerate(self.sessions, 1):
             line = s.to_line()
-
+            if(s.user_id == "admin"):
+                REFRESH_TIME = s.exit_time
+                break
             # 유저가 릴레이션상에 있는지
             user = user_map.get(s.user_id)
             if user is None:
@@ -666,7 +670,7 @@ class StudyCafe:
 
             # (현재시각 - 입장일시) > 시간권 × 2 이면 퇴장일시 기록 (자동 마감)
             if s.exit_time is None and ticket.type == 2:
-                limit = timedelta(hours=ticket.duration * 2)
+                limit = timedelta(hours=ticket.duration) + user.away_time
                 if (now - s.enter_time) > limit:
                     s.exit_time = s.enter_time + limit
                     s.usage_min = int(
@@ -1018,8 +1022,18 @@ class StudyCafe:
         for s in self.sessions:
             if s.exit_time is None:
                 s.usage_min = math.floor((now - s.enter_time).total_seconds() / 60)
-
+        admin_log = Session(
+            user_id="admin",
+            ticket_id=0,
+            seat_id=0,
+            enter_time=now, # 입장/퇴장을 동일하게 설정하거나 빈 객체 처리
+            exit_time=now,
+            usage_min=0,
+        )
+        self.sessions.append(admin_log)
+        
         self.save_all()
+
         print("... 프로그램을 종료합니다.")
         self.running = False
 
