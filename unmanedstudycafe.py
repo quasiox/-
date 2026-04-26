@@ -1007,7 +1007,7 @@ class StudyCafe:
         elif ticket and ticket.type == 2:  # 시간권
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
-            user.start_time = None
+            user.start_time = now
         # 종일권/기간권: 별도 차감 없음
 
         user.away_start = None
@@ -1331,8 +1331,6 @@ class StudyCafe:
         if user.is_entered(self.sessions):
             print(".!! 오류: 이미 입장 중입니다. 먼저 퇴장 후 다시 시도하세요.")
             return
-        if user.ticket_id == 3:
-            user.start_time
         # 좌석 선택
         print("=== 좌석 선택 ===")
         self._print_seats()
