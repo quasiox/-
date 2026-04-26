@@ -3,7 +3,7 @@
 무인 스터디카페 UnmannedStudyCafe
 C03팀 기획서 기반 구현
 """
-from __future__ import annotations
+from __future__ import annotations          #mac 사용자를 위한 구문
 
 import hashlib
 import os
@@ -928,23 +928,49 @@ class StudyCafe:
                 return True
 
             expired = False
-
+            expired_time = None
             if ticket.type in (1, 2):
                 eff = self._calc_effective_remain(user, now)
                 if eff <= 0:
                     expired = True
+                    
+                    if user.away_start is None:
+                        # 1. 정기권이거나, 자리비움을 한 번도 안 한 시간권 (1:1 정상 속도)
+                        expired_time = user.start_time + timedelta(minutes=user.remain)
+                    else:
+                        # 2. 자리비움 중에 만료된 시간권
+                        active_sec = (user.away_start - user.start_time).total_seconds()
+                        active_min = math.ceil(active_sec / 60)
+                        
+                        if user.remain <= active_min:
+                            # 자리비움 버튼을 누르기 "전"에 이미 정상 속도로 만료되었던 경우
+                            expired_time = user.start_time + timedelta(minutes=user.remain)
+                        else:
+                            # 자리비움 "도중"에 만료된 경우
+                            # 남은 시간(leftover)은 현실에서 2배 느리게 흐르므로 곱하기 2를 해줍니다.
+                            leftover = user.remain - active_min
+                            expired_time = user.away_start + timedelta(minutes=leftover * 2)
 
             elif ticket.type == 3:
                 if user.start_time and user.start_time.date() != now.date():
+                    expired_time = user.start_time.replace(hour=23, minute=59, second=59)
                     expired = True
 
             elif ticket.type == 4:
                 if user.start_time:
                     expire_date = user.start_time.date() + timedelta(days=ticket.duration)
                     if now.date() >= expire_date:
+                        from datetime import time
+                        expired_time = datetime.combine(expire_date-timedelta(days=1), time(23,59,59))
                         expired = True
 
             if expired:
+                for s in reversed(self.sessions):
+                    if s.user_id == user.id and s.exit_time is None:
+                        s.exit_time = expired_time
+                        # 기획서 공식: floor((퇴장-입장)/60) 
+                        s.usage_min += math.floor((expired_time - s.enter_time).total_seconds() / 60)
+                        break
                 user.ticket_id  = 0
                 user.remain     = 0
                 user.start_time = None
@@ -972,7 +998,7 @@ class StudyCafe:
         elif ticket and ticket.type == 2:  # 시간권
             deduction = self._calc_deduction(user, ticket, now)
             user.remain = max(0, user.remain - deduction)
-            user.start_time = now  # 시간권: 계속 차감을 위해 기준 시점 갱신
+            user.start_time = None
         # 종일권/기간권: 별도 차감 없음
 
         user.away_start = None
@@ -1157,7 +1183,7 @@ class StudyCafe:
         
         self._write_shutdown_record(now)
         self.save_all()
-        print("... 프로그램을 종료합니다.")
+        print("(프로그램 종료)")
         self.running = False
 
     def cmd_login(self, args: list[str]):
