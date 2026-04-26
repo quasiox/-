@@ -1412,6 +1412,8 @@ class StudyCafe:
             return
 
         user = self.current_user
+        now = self.get_now()
+        self._check_expiry(user, now)
         if user.has_ticket():
             ticket = self._find_ticket(user.ticket_id)
             if ticket:
@@ -1522,6 +1524,7 @@ class StudyCafe:
 
         user = self.current_user
         now = self.get_now()
+        self._check_expiry(user, now)
         seat = self._find_seat_by_user(user.id)
         ticket = self._find_ticket(user.ticket_id)
 
