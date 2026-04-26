@@ -178,8 +178,15 @@ class User:
     def is_admin(self):
         return self.id == ADMIN_ID
 
-    def is_entered(self):
-        return self.start_time is not None
+    def is_entered(self, sessions: list) -> bool:
+        """매니저가 넘겨준 장부(sessions)를 보고 판단"""
+        for s in sessions:
+            # Session 클래스의 is_shutdown_record를 User가 모를 수 있으므로 
+            # 단순히 admin 0번 좌석인지 확인
+            is_shutdown = (s.user_id == "admin" and s.seat_id == 0)
+            if not is_shutdown and s.user_id == self.id and s.exit_time is None:
+                return True
+        return False
 
     def is_away(self):
         return self.away_start is not None
@@ -618,8 +625,10 @@ class StudyCafe:
                 self._integrity_exit("User", i,
                         f"입장 중 아니지만 (start_time 없음) 좌석릴레이션에 있음: {u.id}", line)
             if u.start_time and u.id not in seat_user_ids:
-                self._integrity_exit("User", i,
-                        f"입장 중 이지만 (start_time 있음) 좌석릴레이션에 없음: {u.id}", line)
+                ticket = self._find_ticket(u.ticket_id)
+                if ticket and ticket.type in (1, 2):
+                    self._integrity_exit("User", i,
+                            f"입장 중 이지만 (start_time 있음) 좌석릴레이션에 없음: {u.id}", line)
     
     def _verify_remain_range(self, user: User, i: int):
         """이용권 종류별 잔여시간 가능 범위 검사"""
@@ -878,7 +887,7 @@ class StudyCafe:
             return 0
 
         if ticket.type == 1:  # 정기권: 입장 중일 때만 차감
-            if user.is_entered():
+            if user.is_entered(self.sessions):
                 elapsed = self._calc_deduction(user, ticket, now)
                 return max(0, user.remain - elapsed)
             return user.remain
@@ -1169,7 +1178,7 @@ class StudyCafe:
         if self.current_user:
             user = self.current_user
             ticket = self._find_ticket(user.ticket_id)
-            if ticket and user.is_entered():
+            if ticket and user.is_entered(self.sessions):
                 if ticket.type == 1:  # 정기권
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
@@ -1312,13 +1321,18 @@ class StudyCafe:
             return
 
         user = self.current_user
+        now = self.get_now()
+        if self._check_expiry(user, now):
+            print(".!! 오류: 보유하신 이용권의 기한이 만료되었습니다. 새로 구매해 주세요.")
+            return
         if not user.has_ticket():
             print(".!! 오류: 유효한 이용권이 없습니다. 먼저 이용권을 구매하세요.")
             return
-        if user.is_entered():
+        if user.is_entered(self.sessions):
             print(".!! 오류: 이미 입장 중입니다. 먼저 퇴장 후 다시 시도하세요.")
             return
-
+        if user.ticket_id == 3:
+            user.start_time
         # 좌석 선택
         print("=== 좌석 선택 ===")
         self._print_seats()
@@ -1360,7 +1374,7 @@ class StudyCafe:
             return
 
         user = self.current_user
-        if not user.is_entered():
+        if not user.is_entered(self.sessions):
             print(".!! 오류: 현재 입장 중이 아닙니다.")
             return
 
@@ -1535,7 +1549,7 @@ class StudyCafe:
             else:
                 print(f"    이용권   : 기간권 (잔여 {user.remain}일)")
 
-        if user.is_entered() and user.start_time:
+        if user.is_entered(self.sessions) and user.start_time:
             print(f"    입장 시각 : {user.start_time.strftime(DT_FMT_SEC)}")
 
         if user.is_away():
@@ -1603,7 +1617,7 @@ class StudyCafe:
         if user is None:
             print(f".!! 오류: '{uid}' 사용자를 찾을 수 없습니다.")
             return
-        if not user.is_entered():
+        if not user.is_entered(self.sessions):
             print(f".!! 오류: '{uid}'은(는) 현재 입장 중이 아닙니다.")
             return
 
@@ -1684,7 +1698,7 @@ class StudyCafe:
             return
 
         
-        if not user.is_entered():
+        if not user.is_entered(self.sessions):
             print(".!! 오류: 현재 입장 중이 아닙니다. 자리비움은 입장 중에만 사용할 수 있습니다.")
             return
         if user.is_away():
@@ -1701,7 +1715,7 @@ class StudyCafe:
             return
 
         user = self.current_user
-        if not user.is_entered():
+        if not user.is_entered(self.sessions):
             print(".!! 오류: 현재 입장 중이 아닙니다.")
             return
         if not user.is_away():
@@ -1741,7 +1755,7 @@ class StudyCafe:
         if self.current_user:
             user = self.current_user
             ticket = self._find_ticket(user.ticket_id)
-            if ticket and user.is_entered():
+            if ticket and user.is_entered(self.sessions):
                 if ticket.type == 1:
                     deduction = self._calc_deduction(user, ticket, now)
                     user.remain = max(0, user.remain - deduction)
