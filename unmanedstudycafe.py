@@ -1696,7 +1696,9 @@ class StudyCafe:
                     # 현재까지의 이용량을 깎음 (기존 _calc_deduction 활용)
                     deduction = self._calc_deduction(u, ticket, now)
                     u.remain = max(0, u.remain - deduction)
-        self.last_shutdown = now
+                    user.away_start = None
+                    print("...자리비움이 해제되었습니다.")
+        self.last_shutdown = now   
 
         self._save_users()
 
