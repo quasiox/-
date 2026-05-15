@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+    #!/usr/bin/env python3
 """
 무인 스터디카페 UnmannedStudyCafe
 C03팀 기획서 기반 구현
@@ -488,10 +488,11 @@ class StudyCafe:
                 sys.exit(1)
             self.sessions.append(s)
         
-        self.last_shutdown = None
+        self.time_offset = timedelta(0) # 수정
         for s in reversed(self.sessions):
-            if s.is_shutdown_record() and s.exit_time is not None:
-                    self.last_shutdown = s.exit_time
+            if s.is_shutdown_record(): # 수정
+                    # 저장된 usage_min(초 단위 오프셋)을 timedelta로 변환하여 복구
+                    self.time_offset = timedelta(seconds=s.usage_min)
                     break
         
         if self._find_user(ADMIN_ID) is None:
@@ -556,7 +557,7 @@ class StudyCafe:
             seat_id    = SHUTDOWN_SEAT_ID,
             enter_time = now,
             exit_time  = now, # 💡 이 시각이 다음번 실행 시 기준점이 됨
-            usage_min  = 0,
+            usage_min  = int(self.time_offset.total_seconds()), # 수정
         )
         self.sessions.append(shutdown_session)
         self._save_users()
@@ -1995,36 +1996,40 @@ class StudyCafe:
         self.running = False
 
 
-    def cmd_set_time(self, args: list[str]):
+    def cmd_set_time(self, args: list[str]): # 수정
         """
-        특정 날짜와 시각으로 프로그램 시간을 변경합니다 (미래로만 이동 가능).
-        입력 형식: time YYYY-MM-DD HH:MM
+        현재 프로그램 시각에 입력한 만큼의 시간을 추가합니다.
+        입력 형식: time HH:MM (예: time 01:30 -> 1시간 30분 추가)
         """
-        if len(args) < 2:
-            print(".!! 오류: 날짜와 시각을 모두 입력하세요. (예: time 2000-01-01 00:00)")
+        if len(args) < 1:
+            print(".!! 추가할 시간을 입력하세요. (예: time 01:00)")
             return
 
-        target_str = f"{args[0]} {args[1]}"
+        time_str = args[0]
     
         try:
-            # 1. 입력받은 문자열을 기획서 표준 형식(YYYY-MM-DD HH:MM)으로 변환 [cite: 212]
-            target_time = datetime.strptime(target_str, "%Y-%m-%d %H:%M")
+            # ":"를 기준으로 시(HH)와 분(MM)을 분리
+            if ":" not in time_str:
+                print(".!! 오류: 시간 형식은 HH:MM 이어야 합니다. (예: 12:00)")
+                return
         
-            # 2. 새로운 오프셋 계산
-            new_offset = target_time - datetime.now()
-        
-            # 3. [핵심] 오프셋이 0보다 작거나 같은지 확인 (과거 또는 현재 시각 차단)
-            if new_offset.total_seconds() <= 0:
-                print(".!! 오류: 현재 시각보다 이후의 시각만 설정할 수 있습니다.")
+            h_str, m_str = time_str.split(":")
+            hours = int(h_str)
+            minutes = int(m_str)
+
+            if hours < 0 or minutes < 0:
+                print(".!! 오류: 0 이상의 시간만 추가할 수 있습니다.")
                 return
 
-            # 4. 검증 통과 시 오프셋 업데이트
-            self.time_offset = new_offset
-            print(f"... 시각이 변경되었습니다: {self.get_now().strftime('%Y-%m-%d %H:%M')}")
-            return
-        
+            # 기존 오프셋에 입력받은 시간을 누적하여 더함
+            added_delta = timedelta(hours=hours, minutes=minutes)
+            self.time_offset += added_delta
+            
+            print(f"... 시각이 변경되었습니다. ({hours}시간 {minutes}분 추가)")
+            print(f"... 현재 프로그램 시각: {self.get_now().strftime('%Y-%m-%d %H:%M')}")
+
         except ValueError:
-            print(".!! 오류: 날짜 형식이 올바르지 않습니다. (예: 2000-01-01 00:00)")
+            print(".!! 오류: 숫자 형식이 올바르지 않습니다. (예: time 12:00)")
 
     def get_now(self):
         """시스템 시각에 오프셋이 적용된 '현재 시각'을 반환합니다."""
