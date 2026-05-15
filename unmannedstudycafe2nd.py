@@ -1968,6 +1968,30 @@ class StudyCafe:
                     # 현재까지의 이용량을 깎음 (기존 _calc_deduction 활용)
                     deduction = self._calc_deduction(u, ticket, now)
                     u.remain = max(0, u.remain - deduction)
+        now    = self.get_now()
+        ticket = self._find_ticket(user.ticket_id)
+
+        if ticket and ticket.type == 2:
+            # 자리비움 구간 절반 차감 정산
+            calc_start  = user.start_time
+            if self.last_shutdown and self.last_shutdown > user.start_time:
+                calc_start = self.last_shutdown
+
+            active_sec  = (user.away_start - calc_start).total_seconds()
+            away_sec    = (now - user.away_start).total_seconds()
+            active_min  = math.ceil(active_sec / 60)
+            away_min    = math.ceil(away_sec / 60 / 2)   # 절반 차감
+            total_deduct = active_min + away_min
+
+            user.remain = max(0, user.remain - total_deduct)
+            print(f"... 자리비움이 해제되었습니다.")
+            print(f"    자리비움 시간: {fmt_minutes(math.ceil(away_sec / 60))} "
+                  f"/ 차감: {fmt_minutes(away_min)} "
+                  f"/ 잔여: {fmt_minutes(user.remain)}")
+
+        # ── 핵심: 자리비움 해제 ──
+        user.away_start = None
+        user.start_time = now   # 기준점 갱신
         self.last_shutdown = now
 
         self._save_users()
