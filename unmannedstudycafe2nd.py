@@ -1957,6 +1957,17 @@ class StudyCafe:
             print(".!! 오류: 현재 자리비움 상태가 아닙니다.")
             return
 
+        now = self.get_now()
+        ticket = self._find_ticket(user.ticket_id)
+       
+
+        for u in self.users:
+            if u.start_time and u.ticket_id != 0:
+                ticket = self._find_ticket(u.ticket_id)
+                if ticket and ticket.type in (1, 2):
+                    # 현재까지의 이용량을 깎음 (기존 _calc_deduction 활용)
+                    deduction = self._calc_deduction(u, ticket, now)
+                    u.remain = max(0, u.remain - deduction)
         now    = self.get_now()
         ticket = self._find_ticket(user.ticket_id)
 
