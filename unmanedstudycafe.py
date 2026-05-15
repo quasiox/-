@@ -640,7 +640,6 @@ class StudyCafe:
         if self.userticket_entries:
             self._next_userticket_id = (
                 max(e.userticket_id for e in self.userticket_entries)+1)
-                max(e.userticket_id for e in self.userticket_entries) + 1)
 
 
     def _save_file(self, filepath, items):
@@ -1258,9 +1257,9 @@ class StudyCafe:
                     f"존재하지 않는 user_id: {r.user_id}", line)
 
             # seat_id 범위
-            if r.seat_id < 0 or r.seat_id > TOTAL_SEATS:
+            if r.seat_id < 0 or r.seat_id > self.total_seat:
                 self._integrity_exit("Reservation", i,
-                    f"seat_id 범위 오류 (0~{TOTAL_SEATS}): {r.seat_id}", line)
+                    f"seat_id 범위 오류 (0~{self.total_seat}): {r.seat_id}", line)
 
             # userticket_id 음수 불가
             if r.userticket_id < 0:
@@ -1272,7 +1271,6 @@ class StudyCafe:
                 self._integrity_exit("Reservation", i,
                     f"status는 0/1/2 중 하나여야 함: {r.status}", line)
 
-    def _verify_userticket_relation(self):
     def _verify_userticket_relation(self):
         """UserTicketRelation 무결성 검사.
         - userticket_id: 1 이상, 중복 없음
@@ -1315,8 +1313,6 @@ class StudyCafe:
                 if user_reserved[e.user_id] > 1:
                     self._integrity_exit("UserTicket", i,
                         f"유저({e.user_id})의 is_reserved=True 항목이 2개 이상", line)
-                        f"유저({e.user_id})의 is_reserved=True 항목이 2개 이상: "
-                        f"예약은 이용권 1개에만 묶일 수 있음", line)
 
     # ─── 사용자 검색 (이진 탐색) ───
     def _find_user(self, uid: str) -> User | None:
@@ -1468,8 +1464,6 @@ class StudyCafe:
                         s.exit_time = expired_time
                         s.usage_min += math.floor((expired_time - s.enter_time).total_seconds() / 60)
                         break
-
-                if self._activate_next_ticket(user, activation_time=expired_time):
                 # 대기 이용권 있으면 자동 전환 (좌석 유지)
                 if self._activate_next_ticket(user):
                     next_ticket = self._find_ticket(user.ticket_id)
@@ -1800,7 +1794,6 @@ class StudyCafe:
     CMDS_LOGGED_OUT = {"login", "register"}
     CMDS_LOGGED_IN = {"seat", "enter", "exit", "buy", "myinfo", "admin",
                        "logout", "pause", "resume", "reserve", "myreserv", "cancelreserv"}
-                      "logout", "pause", "resume"}
     # 한글 동의어 매핑
     CMD_ALIASES = {
         "도움말": "help", "종료": "end", "로그인": "login", "회원가입": "register",
@@ -1869,7 +1862,7 @@ class StudyCafe:
                 else:
                     uid = seat.user_id
                     label = uid if len(uid) <= 6 else uid[:4] + "…"
-                row_str += f"[{seat.id:2d}: {label:<6s}] "
+                    row_str += f"[{seat.id:2d}: {label:<6s}] "
             print(row_str)
 
     # ═══════════════════════════════════════════
@@ -2481,7 +2474,6 @@ class StudyCafe:
             print(f"  항목{r.item_id:3d} | 그룹{r.group_id:3d} | {r.user_id:<20s} | "
                   f"{seat_str:<8s}{ext_str:<5s} | "
                   f"{r.reserved_at.strftime(DT_FMT_SEC)} | {status_str}")
-                  f"입장:{et} | 퇴장:{xt} | {ut}분")
 
     # ─── 좌석 인덱스 편집 ───
     def _admin_edit_seats(self):
@@ -2626,7 +2618,7 @@ class StudyCafe:
 
         # ── 좌석 선택 ──
         print("=== 좌석 예약 ===")
-        print(f"예약할 좌석 번호를 입력하세요. (1~{TOTAL_SEATS}, 0=아무 자리나)")
+        print(f"예약할 좌석 번호를 입력하세요. (1~{self.total_seat}, 0=아무 자리나)")
         self._print_seats()
 
         seat_input = safe_input("선택: 좌석 번호 > ")
@@ -2638,8 +2630,8 @@ class StudyCafe:
             return
 
         seat_id = int(seat_input)
-        if seat_id < 0 or seat_id > TOTAL_SEATS:
-            print(f".!! 오류: 0~{TOTAL_SEATS} 사이의 번호를 입력하세요.")
+        if seat_id < 0 or seat_id > self.total_seat:
+            print(f".!! 오류: 0~{self.total_seat} 사이의 번호를 입력하세요.")
             return
 
         userticket_id = 0   # 기본: 현재 활성 이용권
